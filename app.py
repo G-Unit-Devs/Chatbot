@@ -12,7 +12,12 @@ app = Flask(__name__)
 CORS(app)
 
 DATA_FILE = "user_data.json"
-COLLECTABLE_FIELDS = ["domain", "experience", "help", "expectations", "about"]
+
+# Champs collectables en fonction du rôle
+COLLECTABLE_FIELDS = {
+    "pro": ["domain", "experience", "help", "expectations", "about", "histoires", "passions"],
+    "chercheur": ["expectations", "about", "histoires", "centres_interets"]
+}
 
 def detect_language(text):
     """Détecte la langue avec langdetect et force le français si des mots-clés français sont détectés."""
@@ -42,14 +47,18 @@ def save_user_data(data):
 
 def analyze_with_llm(user_message, role, existing_data, language, conversation_history):
     """Utilise le LLM pour analyser le message, extraire les informations et générer une réponse."""
+    # Définir les champs à collecter en fonction du rôle
+    required_fields = COLLECTABLE_FIELDS.get(role, [])
+
     # Générer un prompt pour le LLM
     prompt = (
         f"Tu es un assistant IA conçu pour collecter des informations clés tout en maintenant une conversation naturelle.\n"
         f"### Mission :\n"
-        f"1. Collecter les informations suivantes : {', '.join(COLLECTABLE_FIELDS)}.\n"
+        f"1. Collecter les informations suivantes : {', '.join(required_fields)}.\n"
         f"2. Maintenir une conversation fluide et engageante.\n"
         f"3. Adapter tes réponses en fonction de l'état d'esprit de l'utilisateur.\n"
-        f"4. Ne jamais poser deux fois la même question.\n\n"
+        f"4. Rebondir sur la réponse de l'utilisateur pour poser une question connexe.\n"
+        f"5. Ne jamais poser deux fois la même question.\n\n"
         f"### Contexte :\n"
         f"Rôle de l'utilisateur : {role}\n"
         f"Langue : {language}\n"
@@ -62,8 +71,9 @@ def analyze_with_llm(user_message, role, existing_data, language, conversation_h
         f"2. Si une information manquante est mentionnée, enregistre-la dans un JSON sous la clé 'data'.\n"
         f"3. Génère une réponse naturelle et contextuelle pour engager la conversation.\n"
         f"4. Si l'utilisateur exprime une émotion (frustration, ennui, etc.), réponds avec empathie.\n"
-        f"5. Réponds UNIQUEMENT en {language}.\n"
-        f"6. Retourne un JSON au format suivant :\n"
+        f"5. Rebondis sur la réponse de l'utilisateur pour poser une question connexe.\n"
+        f"6. Réponds UNIQUEMENT en {language}.\n"
+        f"7. Retourne un JSON au format suivant :\n"
         "{ \"data\": { \"field1\": \"value1\", \"field2\": \"value2\" }, \"response\": \"Ta réponse ici\" }"
     )
 
