@@ -1,0 +1,23 @@
+[
+    {
+        "role": "pro",
+        "language": "fr",
+        "data": {
+            "domain": "Data Management",
+            "experience": "5 years",
+            "help": "helping less experienced individuals find their path in the Data world",
+            "expectations": "not specified",
+            "about": "Adbel"
+        },
+        "conversation_history": [
+            {
+                "role": "user",
+                "content": "bonjour"
+            },
+            {
+                "role": "user",
+                "content": "je m'appelle Adbel et j'ai 5ans d'exp\u00e9rience dans le mande de la Data, je suis l\u00e0 aujourdhui pour aider les moins exp\u00e9rimenter \u00e0 trouver leurs chemin dans le monde de la Data"
+            }
+        ]
+    }
+]

@@ -3,11 +3,27 @@ import ollama
 import json
 from flask_cors import CORS
 import os
+from langdetect import detect, DetectorFactory
+
+# Assure une détection de langue stable
+DetectorFactory.seed = 0
 
 app = Flask(__name__)
 CORS(app)
 
 DATA_FILE = "user_data.json"
+COLLECTABLE_FIELDS = ["domain", "experience", "help", "expectations", "about"]
+
+def detect_language(text):
+    """Détecte la langue avec langdetect et force le français si des mots-clés français sont détectés."""
+    french_keywords = ["bonjour", "salut", "merci", "oui", "non"]
+    if any(keyword in text.lower() for keyword in french_keywords):
+        return "fr"
+    try:
+        lang = detect(text)
+        return "fr" if lang == "fr" else "en"
+    except:
+        return "en"
 
 def load_user_data():
     """Charge les données utilisateur depuis le fichier JSON."""
@@ -24,56 +40,52 @@ def save_user_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def analyze_with_llm(user_message, role, existing_data, language):
-    """Analyse le message utilisateur avec le modèle LLM pour extraire les informations manquantes."""
-    if role == "pro":
-        prompt = (
-            f"You are an AI assistant designed to extract key user information for matchmaking.\n"
-            f"User role: {role}\n"
-            f"Langue: {language}\n"
-            f"Existing stored information: {json.dumps(existing_data, ensure_ascii=False)}\n"
-            f"User message: '{user_message}'\n\n"
-            "### Instructions:\n"
-            "1. Identify and extract only missing details (domain, experience, help, expectations, about) WITHOUT modifying already stored information.\n"
-            "2. If all necessary information is collected, transition to free conversation.\n"
-            "3. NEVER mix languages in responses. Respond strictly in {language}.\n"
-            "4. STRICTLY return a JSON response in this format:\n"
-            "5. Respond STRICTLY in {language}. If the detected language is French, your response must be in French."
-            "{ \"role\": \"pro\", \"data\": { \"domain\": \"existing or new value\", \"experience\": \"existing or new value\", \"help\": \"existing or new value\", \"expectations\": \"existing or new value\", \"about\": \"existing or new value\" }, \"response\": \"Your response here\" }"
-        )
-    elif role == "chercheur":
-        prompt = (
-            f"You are an AI assistant designed to extract key user information for matchmaking.\n"
-            f"User role: {role}\n"
-            f"Detected language: {language}\n"
-            f"Existing stored information: {json.dumps(existing_data, ensure_ascii=False)}\n"
-            f"User message: '{user_message}'\n\n"
-            "### Instructions:\n"
-            "1. Identify and extract only missing details (expectations, about) WITHOUT modifying already stored information.\n"
-            "2. If all necessary information is collected, transition to free conversation.\n"
-            "3. NEVER mix languages in responses. Respond strictly in {language}.\n"
-            "4. STRICTLY return a JSON response in this format:\n"
-            "{ \"role\": \"chercheur\", \"data\": { \"expectations\": \"existing or new value\", \"about\": \"existing or new value\" }, \"response\": \"Your response here\" }"
-        )
-    else:
-        return {"role": role, "data": existing_data, "response": "Rôle non reconnu." if language == "fr" else "Role not recognized."}
-    
+def analyze_with_llm(user_message, role, existing_data, language, conversation_history):
+    """Utilise le LLM pour analyser le message, extraire les informations et générer une réponse."""
+    # Générer un prompt pour le LLM
+    prompt = (
+        f"Tu es un assistant IA conçu pour collecter des informations clés tout en maintenant une conversation naturelle.\n"
+        f"### Mission :\n"
+        f"1. Collecter les informations suivantes : {', '.join(COLLECTABLE_FIELDS)}.\n"
+        f"2. Maintenir une conversation fluide et engageante.\n"
+        f"3. Adapter tes réponses en fonction de l'état d'esprit de l'utilisateur.\n"
+        f"4. Ne jamais poser deux fois la même question.\n\n"
+        f"### Contexte :\n"
+        f"Rôle de l'utilisateur : {role}\n"
+        f"Langue : {language}\n"
+        f"Informations déjà collectées : {json.dumps(existing_data, ensure_ascii=False)}\n"
+        f"Historique de la conversation : {json.dumps(conversation_history, ensure_ascii=False)}\n\n"
+        f"### Message de l'utilisateur :\n"
+        f"'{user_message}'\n\n"
+        f"### Instructions :\n"
+        f"1. Analyse le message de l'utilisateur pour identifier les informations pertinentes.\n"
+        f"2. Si une information manquante est mentionnée, enregistre-la dans un JSON sous la clé 'data'.\n"
+        f"3. Génère une réponse naturelle et contextuelle pour engager la conversation.\n"
+        f"4. Si l'utilisateur exprime une émotion (frustration, ennui, etc.), réponds avec empathie.\n"
+        f"5. Réponds UNIQUEMENT en {language}.\n"
+        f"6. Retourne un JSON au format suivant :\n"
+        "{ \"data\": { \"field1\": \"value1\", \"field2\": \"value2\" }, \"response\": \"Ta réponse ici\" }"
+    )
+
+    # Envoyer le prompt au LLM
     response = ollama.chat(model="mistral", messages=[{"role": "user", "content": prompt}])
-    
+
     try:
+        # Extraire la réponse du LLM
         extracted_data = json.loads(response['message']['content'])
         if not isinstance(extracted_data, dict) or "response" not in extracted_data:
             raise ValueError("Invalid JSON format from model")
-        extracted_data["role"] = role  # Ensure the correct role is saved
-        extracted_data["language"] = language  # Preserve language consistency
-        
-        # Ensure missing fields are updated but existing ones remain unchanged
-        for key, value in existing_data.items():
-            if key in extracted_data["data"] and not extracted_data["data"][key]:
-                extracted_data["data"][key] = value
+
+        # Mettre à jour les données existantes avec les nouvelles informations
+        extracted_data["data"] = {**existing_data, **extracted_data.get("data", {})}
+
     except (json.JSONDecodeError, ValueError):
-        extracted_data = {"role": role, "data": existing_data, "response": "Je n'ai pas bien compris, peux-tu reformuler ?" if language == "fr" else "I didn't quite understand, could you rephrase?"}
-    
+        # En cas d'erreur, retourner une réponse générique
+        extracted_data = {
+            "data": existing_data,
+            "response": "Je n'ai pas bien compris, peux-tu reformuler ?" if language == "fr" else "I didn't quite understand, could you rephrase?"
+        }
+
     return extracted_data
 
 @app.route("/chat", methods=["POST"])
@@ -81,35 +93,43 @@ def chat():
     data = request.json
     user_message = data.get("message", "")
     user_role = data.get("role", "")
-    
+
     if not user_message or user_role not in ["pro", "chercheur"]:
-        return jsonify({"error": "Message vide ou rôle non reconnu." if any(ord(c) > 127 for c in user_message) else "Empty message or unrecognized role."}), 400
-    
-    # Detect language
-    language = "fr" if any(ord(c) > 127 for c in user_message) else "en"
-    
-    # Load existing stored data
+        return jsonify({"error": "Message vide ou rôle non reconnu."}), 400
+
     existing_data_list = load_user_data()
-    existing_data = next((entry["data"] for entry in existing_data_list if entry["role"] == user_role and entry.get("language") == language), {})
-    
-    # Analyze with LLM
-    extracted_data = analyze_with_llm(user_message, user_role, existing_data, language)
-    
-    # Ensure role consistency
-    extracted_data["role"] = user_role
-    
-    # Update and save new data without overwriting existing information
-    updated_entry = {"role": user_role, "language": language, "data": extracted_data["data"], "response": extracted_data["response"]}
-    
-    # Update the existing data list
-    existing_data_list = [entry for entry in existing_data_list if not (entry["role"] == user_role and entry.get("language") == language)]
-    existing_data_list.append(updated_entry)
-    
+    user_entry = next((entry for entry in existing_data_list if entry["role"] == user_role), None)
+
+    # Détecter la langue une seule fois au début, et la garder fixe
+    if user_entry is None:
+        language = detect_language(user_message)
+        user_entry = {"role": user_role, "language": language, "data": {}, "conversation_history": []}
+        existing_data_list.append(user_entry)
+    else:
+        language = user_entry["language"]
+
+    existing_data = user_entry.get("data", {})
+    conversation_history = user_entry.get("conversation_history", [])
+
+    # Ajouter le message de l'utilisateur à l'historique
+    conversation_history.append({"role": "user", "content": user_message})
+
+    # Analyser le message avec le modèle LLM
+    extracted_data = analyze_with_llm(user_message, user_role, existing_data, language, conversation_history)
+
+    # Mettre à jour les données et l'historique
+    user_entry["data"] = extracted_data["data"]
+    user_entry["conversation_history"] = conversation_history
+
+    # Sauvegarder les données mises à jour
     save_user_data(existing_data_list)
-    
-    # Generate relevant and fluid response, preserving language
-    bot_response = extracted_data.get("response", "Peux-tu préciser un point manquant pour compléter ton profil ?" if language == "fr" else "Can you provide more details to complete your profile?")
-    
+
+    # Générer la réponse du bot
+    bot_response = extracted_data.get("response", "Je n'ai pas bien compris, peux-tu reformuler ?" if language == "fr" else "I didn't quite understand, could you rephrase?")
+
+    # Ajouter la réponse du bot à l'historique
+    conversation_history.append({"role": "bot", "content": bot_response})
+
     return jsonify({"response": bot_response})
 
 if __name__ == "__main__":
