@@ -58,20 +58,20 @@ def is_tech_related(domain):
     """Vérifie si le domaine est lié à la tech."""
     return any(tech_domain in domain.lower() for tech_domain in TECH_DOMAINS)
 
-def load_user_data():
-    """Charge les données utilisateur depuis le fichier JSON."""
-    if not os.path.exists(DATA_FILE):
-        return []
-    with open(DATA_FILE, "r") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
+# def load_user_data():
+#     """Charge les données utilisateur depuis le fichier JSON."""
+#     if not os.path.exists(DATA_FILE):
+#         return []
+#     with open(DATA_FILE, "r") as f:
+#         try:
+#             return json.load(f)
+#         except json.JSONDecodeError:
+#             return []
 
-def save_user_data(data):
-    """Sauvegarde les données utilisateur dans le fichier JSON."""
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+# def save_user_data(data):
+#     """Sauvegarde les données utilisateur dans le fichier JSON."""
+#     with open(DATA_FILE, "w") as f:
+#         json.dump(data, f, indent=4)
 
 def analyze_with_llm(user_message, role, existing_data, language, conversation_history):
     """Utilise le LLM pour analyser le message, extraire les informations et générer une réponse."""
@@ -80,7 +80,7 @@ def analyze_with_llm(user_message, role, existing_data, language, conversation_h
 
     # Générer un prompt pour le LLM
     prompt = (
-        f"Tu es un assistant IA conçu pour collecter des informations clés tout en maintenant une conversation naturelle.\n"
+        f"Tu te nomme Paris, un assistant IA conçu pour collecter des informations clés tout en maintenant une conversation naturelle.\n"
         f"### Mission :\n"
         f"1. Collecter les informations suivantes : {', '.join(required_fields)}.\n"
         f"2. Maintenir une conversation fluide et engageante.\n"
@@ -162,23 +162,33 @@ def chat():
     data = request.json
     user_message = data.get("message", "")
     user_role = data.get("role", "")
+    user_data = data.get("trajectory", "")
+    user_history = data.get("history", "")
+
+    # print(data);
 
     if not user_message or user_role not in ["pro", "chercheur"]:
         return jsonify({"error": "Message vide ou rôle non reconnu."}), 400
 
-    existing_data_list = load_user_data()
-    user_entry = next((entry for entry in existing_data_list if entry["role"] == user_role), None)
+    #existing_data_list = user_data
+    #print(existing_data_list);
+    #user_entry = next((entry for entry in existing_data_list if entry["role"] == user_role), None)
+    user_entry = user_data;
 
     # Détecter la langue une seule fois au début, et la garder fixe
-    if user_entry is None:
+    """ if user_entry is None:
         language = detect_language(user_message)
         user_entry = {"role": user_role, "language": language, "data": {}, "conversation_history": []}
+        existing_data_list = user_data if isinstance(user_data, list) else []
         existing_data_list.append(user_entry)
+        if isinstance(existing_data_list, list):
+            existing_data_list.append(user_entry)
     else:
-        language = user_entry["language"]
+        language = user_entry["language"] """
+    language= "fr";
 
     existing_data = user_entry.get("data", {})
-    conversation_history = user_entry.get("conversation_history", [])
+    conversation_history = user_history
 
     # Ajouter le message de l'utilisateur à l'historique
     conversation_history.append({"role": "user", "content": user_message})
@@ -189,9 +199,10 @@ def chat():
     # Mettre à jour les données et l'historique
     user_entry["data"] = extracted_data["data"]
     user_entry["conversation_history"] = conversation_history
+    print(conversation_history)
 
-    # Sauvegarder les données mises à jour
-    save_user_data(existing_data_list)
+    # # Sauvegarder les données mises à jour
+    # save_user_data(existing_data_list)
 
     # Générer la réponse du bot
     bot_response = extracted_data.get("response", "Je n'ai pas bien compris, peux-tu reformuler ?" if language == "fr" else "I didn't quite understand, could you rephrase?")
@@ -199,7 +210,46 @@ def chat():
     # Ajouter la réponse du bot à l'historique
     conversation_history.append({"role": "bot", "content": bot_response})
 
-    return jsonify({"response": bot_response})
+    return jsonify({"response": bot_response, "trajectory": user_entry.get('data'), language: language})
+
+@app.route("/greetings", methods=["GET"])
+def greetings():
+    """
+    Endpoint pour générer dynamiquement un message de bienvenue avec Ollama.
+    ---
+    tags:
+      - Messages
+    responses:
+      200:
+        description: Message de bienvenue généré par le LLM.
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              description: Le message de bienvenue généré.
+    """
+    # Générer une demande au modèle LLM
+    prompt = (
+        "Génère un message de bienvenue chaleureux et engageant pour un nouvel utilisateur "
+        "qui vient d'arriver sur le site. Le message doit être naturel et amical."
+        "Incite l'utilisateur à se présenter, présenter ses attentes ou poser des questions s'il le souhaite."
+        "Le message doit être adapté à un public francophone."
+        "soit court et concis, mais suffisamment informatif pour encourager l'utilisateur à interagir."
+    )
+
+    try:
+        # Appel à Ollama pour générer un message
+        response = ollama.chat(model="mistral", messages=[{"role": "user", "content": prompt}])
+
+        # Extraire la réponse générée
+        generated_message = response['message']['content'].strip()
+
+    except Exception as e:
+        generated_message = "Bienvenue sur notre plateforme ! Nous sommes ravis de vous accueillir. 😊"
+
+    return jsonify({"message": generated_message})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
