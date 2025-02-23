@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+
+  chatbot-api:
+    build: .
+    container_name: chatbot-api
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434

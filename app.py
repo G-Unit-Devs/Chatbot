@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_swagger_ui import get_swaggerui_blueprint
 import ollama
 import json
 from flask_cors import CORS
@@ -11,6 +12,22 @@ DetectorFactory.seed = 0
 app = Flask(__name__)
 CORS(app)
 
+# Configuration de Swagger UI
+SWAGGER_URL = '/api/docs'  # URL pour accéder à l'interface Swagger UI
+API_URL = '/static/swagger.json'  # URL du fichier Swagger JSON
+
+# Créer un blueprint pour Swagger UI
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={
+        'app_name': "Chatbot API"
+    }
+)
+
+# Enregistrer le blueprint dans l'application Flask
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+
 DATA_FILE = "user_data.json"
 
 # Champs collectables en fonction du rôle
@@ -18,6 +35,13 @@ COLLECTABLE_FIELDS = {
     "pro": ["domain", "experience", "help", "expectations", "about", "histoires", "passions"],
     "chercheur": ["expectations", "about", "histoires", "centres_interets"]
 }
+
+# Domaines liés à la tech
+TECH_DOMAINS = [
+    "tech", "technologie", "informatique", "développement", "programmation", "data science", 
+    "intelligence artificielle", "IA", "machine learning", "cybersécurité", "cloud computing", 
+    "réseaux", "devops", "ingénierie logicielle", "robotique", "IoT", "blockchain"
+]
 
 def detect_language(text):
     """Détecte la langue avec langdetect et force le français si des mots-clés français sont détectés."""
@@ -29,6 +53,10 @@ def detect_language(text):
         return "fr" if lang == "fr" else "en"
     except:
         return "en"
+
+def is_tech_related(domain):
+    """Vérifie si le domaine est lié à la tech."""
+    return any(tech_domain in domain.lower() for tech_domain in TECH_DOMAINS)
 
 def load_user_data():
     """Charge les données utilisateur depuis le fichier JSON."""
@@ -58,7 +86,8 @@ def analyze_with_llm(user_message, role, existing_data, language, conversation_h
         f"2. Maintenir une conversation fluide et engageante.\n"
         f"3. Adapter tes réponses en fonction de l'état d'esprit de l'utilisateur.\n"
         f"4. Rebondir sur la réponse de l'utilisateur pour poser une question connexe.\n"
-        f"5. Ne jamais poser deux fois la même question.\n\n"
+        f"5. Ne jamais poser deux fois la même question.\n"
+        f"6. La plateforme est centrée sur la tech. Si l'utilisateur ne travaille pas dans un domaine lié à la tech, explique-lui gentiment que la plateforme est réservée aux professionnels et chercheurs dans ce domaine.\n\n"
         f"### Contexte :\n"
         f"Rôle de l'utilisateur : {role}\n"
         f"Langue : {language}\n"
@@ -71,7 +100,7 @@ def analyze_with_llm(user_message, role, existing_data, language, conversation_h
         f"2. Si une information manquante est mentionnée, enregistre-la dans un JSON sous la clé 'data'.\n"
         f"3. Génère une réponse naturelle et contextuelle pour engager la conversation.\n"
         f"4. Si l'utilisateur exprime une émotion (frustration, ennui, etc.), réponds avec empathie.\n"
-        f"5. Rebondis sur la réponse de l'utilisateur pour poser une question connexe.\n"
+        f"5. Si l'utilisateur ne travaille pas dans un domaine lié à la tech, explique-lui gentiment que la plateforme est réservée aux professionnels et chercheurs dans ce domaine.\n"
         f"6. Réponds UNIQUEMENT en {language}.\n"
         f"7. Retourne un JSON au format suivant :\n"
         "{ \"data\": { \"field1\": \"value1\", \"field2\": \"value2\" }, \"response\": \"Ta réponse ici\" }"
@@ -100,6 +129,36 @@ def analyze_with_llm(user_message, role, existing_data, language, conversation_h
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    """
+    Endpoint pour interagir avec le chatbot.
+    ---
+    tags:
+      - Chatbot
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              description: Le message de l'utilisateur.
+            role:
+              type: string
+              description: Le rôle de l'utilisateur (pro ou chercheur).
+    responses:
+      200:
+        description: Réponse du chatbot.
+        schema:
+          type: object
+          properties:
+            response:
+              type: string
+              description: La réponse du chatbot.
+      400:
+        description: Erreur si le message ou le rôle est manquant ou invalide.
+    """
     data = request.json
     user_message = data.get("message", "")
     user_role = data.get("role", "")

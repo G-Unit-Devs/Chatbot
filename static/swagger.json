@@ -1,0 +1,58 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+      "title": "Chatbot API",
+      "version": "1.0.0",
+      "description": "API pour interagir avec un chatbot intelligent."
+    },
+    "paths": {
+      "/chat": {
+        "post": {
+          "tags": ["Chatbot"],
+          "summary": "Interagir avec le chatbot",
+          "description": "Envoie un message au chatbot et reçoit une réponse.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Le message de l'utilisateur."
+                    },
+                    "role": {
+                      "type": "string",
+                      "description": "Le rôle de l'utilisateur (pro ou chercheur)."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Réponse du chatbot.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "response": {
+                        "type": "string",
+                        "description": "La réponse du chatbot."
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Erreur si le message ou le rôle est manquant ou invalide."
+            }
+          }
+        }
+      }
+    }
+  }
